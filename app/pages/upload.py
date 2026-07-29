@@ -114,9 +114,12 @@ def show_upload_page():
 
                             json_result, json_error = extract_json_from_text(pdf_text)
                             analysis_result = None
+                            analysis_error = None
                             
                             if json_result:
-                                analysis_result, _ = analyze_extracted_data(json_result)
+                                analysis_result, analysis_error = analyze_extracted_data(json_result)
+                                if json_error:
+                                    st.warning(json_error)
 
                         if not json_result:
                             crud.update_upload_status(db, upload_record.id, "error", json_error or "Не удалось извлечь данные")
@@ -125,6 +128,8 @@ def show_upload_page():
                             crud.create_analysis(db, upload_record.id, json_result, analysis_result or "")
                             crud.update_upload_status(db, upload_record.id, "done")
                             st.session_state["last_upload_id"] = upload_record.id
+                            if analysis_error:
+                                st.warning(analysis_error)
                             st.success("Анализ завершён! Нажмите 'Перейти к результату' выше.")
                             st.rerun()
 
@@ -152,12 +157,24 @@ def show_upload_page():
                             combined_json = json.dumps(results, ensure_ascii=False, indent=2)
                             
                             status_text.text("Генерация аналитики...")
-                            analysis_result, _ = analyze_extracted_data(combined_json)
+                            analysis_result = None
+                            analysis_error = None
+                            
+                            try:
+                                analysis_result, analysis_error = analyze_extracted_data(combined_json)
+                            except Exception as e:
+                                analysis_error = f"Ошибка при генерации аналитики: {str(e)}"
+                                st.warning(f"Не удалось сгенерировать аналитику, но JSON данные сохранены: {str(e)}")
 
                             crud.create_analysis(db, upload_record.id, combined_json, analysis_result or "")
                             crud.update_upload_status(db, upload_record.id, "done")
                             st.session_state["last_upload_id"] = upload_record.id
-                            st.success(f"Анализ завершён! Обработано файлов: {len(results)}. Нажмите 'Перейти к результату' выше.")
+                            if analysis_error:
+                                st.warning(analysis_error)
+                            if analysis_result:
+                                st.success(f"Анализ завершён! Обработано файлов: {len(results)}. Нажмите 'Перейти к результату' выше.")
+                            else:
+                                st.info(f"Данные извлечены из {len(results)} файлов. Аналитика недоступна. Нажмите 'Перейти к результату' выше.")
                             st.rerun()
 
                 except Exception as e:

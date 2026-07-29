@@ -1,9 +1,12 @@
 from typing import Optional
+import logging
 from app.core.llm_client import get_llm_client
 from app.core.schemas import ExtractedData
 from app.database.session import SessionLocal
 from app.database import crud
 import json
+
+logger = logging.getLogger(__name__)
 
 
 DEFAULT_PROMPT_EXTRACT = """Ты — медицинский аналитик. Извлеки структурированные данные из текста медицинской документации.
@@ -76,6 +79,24 @@ DEFAULT_SYSTEM_EXTRACT = "Ты — медицинский аналитик, сп
 DEFAULT_SYSTEM_ANALYZE = "Ты — эксперт по оценке качества медицинской документации в лечебно-профилактических учреждениях."
 
 
+def estimate_tokens(text: str) -> int:
+    return len(text) // 4
+
+
+def calculate_dynamic_max_tokens(data_size_chars: int, min_tokens: int = 4096, max_tokens: int = 16384) -> int:
+    estimated_input_tokens = data_size_chars // 4
+    base_output = min_tokens
+    
+    if estimated_input_tokens > 10000:
+        base_output = 8192
+    if estimated_input_tokens > 20000:
+        base_output = 12288
+    if estimated_input_tokens > 30000:
+        base_output = 16384
+    
+    return min(base_output, max_tokens)
+
+
 def get_prompt_extract() -> str:
     try:
         db = SessionLocal()
@@ -116,17 +137,33 @@ def get_system_analyze() -> str:
         return DEFAULT_SYSTEM_ANALYZE
 
 
-def extract_json_from_text(pdf_text: str, max_tokens: int = 8192) -> tuple[Optional[str], Optional[str]]:
+def extract_json_from_text(pdf_text: str, max_tokens: int = -1) -> tuple[Optional[str], Optional[str]]:
     client = get_llm_client()
+
+    if max_tokens == -1:
+        max_tokens = None
 
     try:
         prompt_template = get_prompt_extract()
         prompt = prompt_template.format(pdf_text=pdf_text)
+        
+        logger.info(f"Extracting JSON, input size: {len(pdf_text)} chars, max_tokens: {max_tokens or 'unlimited'}")
+        
         response = client.chat(
             system_prompt=get_system_extract(),
             user_message=prompt,
             max_tokens=max_tokens
         )
+        
+        logger.info(f"JSON extraction response: finish_reason={response.finish_reason}, truncated={response.truncated}")
+        
+        if response.truncated:
+            logger.warning(f"JSON extraction truncated, finish_reason: {response.finish_reason}")
+        
+        if not response.content or not response.content.strip():
+            logger.error("Empty response from LLM for JSON extraction")
+            return None, "LLM вернул пустой ответ"
+        
         json_str = response.content.strip()
 
         if json_str.startswith("```json"):
@@ -139,28 +176,55 @@ def extract_json_from_text(pdf_text: str, max_tokens: int = 8192) -> tuple[Optio
 
         try:
             parsed = json.loads(json_str)
-            return json.dumps(parsed, ensure_ascii=False, indent=2), None
+            result = json.dumps(parsed, ensure_ascii=False, indent=2)
+            
+            if response.truncated:
+                return result, "Предупреждение: ответ был обрезан из-за лимита токенов. Данные могут быть неполными."
+            return result, None
         except json.JSONDecodeError as e:
+            logger.error(f"JSON decode error: {e}")
             return json_str, f"Предупреждение: ответ не является валидным JSON ({str(e)})"
 
     except Exception as e:
+        logger.error(f"Error extracting JSON: {e}")
         return None, f"Ошибка при извлечении данных: {str(e)}"
 
 
-def analyze_extracted_data(json_data: str, max_tokens: int = 4096) -> tuple[Optional[str], Optional[str]]:
+def analyze_extracted_data(json_data: str, max_tokens: int = -1) -> tuple[Optional[str], Optional[str]]:
     client = get_llm_client()
+
+    if max_tokens == -1:
+        max_tokens = None
 
     try:
         prompt_template = get_prompt_analyze()
         prompt = prompt_template.format(json_data=json_data)
+        
+        logger.info(f"Analyzing data, input size: {len(json_data)} chars, max_tokens: {max_tokens or 'unlimited'}")
+        
         response = client.chat(
             system_prompt=get_system_analyze(),
             user_message=prompt,
             max_tokens=max_tokens
         )
+        
+        logger.info(f"Analysis response: finish_reason={response.finish_reason}, truncated={response.truncated}, content_length={len(response.content) if response.content else 0}")
+        
+        if response.truncated:
+            logger.warning(f"Analysis truncated, finish_reason: {response.finish_reason}")
+            if response.content:
+                return response.content, "Предупреждение: аналитика была обрезана из-за лимита токенов. Попробуйте уменьшить количество документов."
+            else:
+                return None, "Аналитика была обрезана и пуста. Попробуйте уменьшить количество документов."
+        
+        if not response.content or not response.content.strip():
+            logger.error("Empty response from LLM for analysis")
+            return None, "LLM вернул пустой ответ при анализе"
+        
         return response.content, None
 
     except Exception as e:
+        logger.error(f"Error analyzing data: {e}", exc_info=True)
         return None, f"Ошибка при анализе данных: {str(e)}"
 
 

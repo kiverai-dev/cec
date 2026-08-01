@@ -68,7 +68,7 @@
 │   │   ├── users.py               # UI: CRUD пользователей
 │   │   └── settings.py            # UI: настройка llama.cpp
 │   │
-│   ├── pages/
+│   ├── ui/                        # НЕ называть "pages" — Streamlit MPA автонавигация
 │   │   ├── __init__.py
 │   │   ├── dashboard.py           # Главная страница
 │   │   ├── upload.py              # Загрузка PDF/архива
@@ -157,6 +157,7 @@
 - `get_uploads_by_user(user_id: int, limit: int = 50) -> list[Upload]`
 - `get_all_uploads(limit: int = 100) -> list[Upload]`
 - `update_upload_status(upload_id: int, status: str, error_message: str = None) -> Upload`
+- `delete_upload(upload_id: int) -> bool` — каскадно удаляет связанный Analysis
 
 ### Analyses
 - `create_analysis(upload_id: int, extracted_json: str, result_text: str) -> Analysis`
@@ -581,10 +582,10 @@ Thumbs.db
    - `app/core/analyzer.py`
 
 8. **UI страницы**
-   - `app/pages/dashboard.py`
-   - `app/pages/upload.py`
-   - `app/pages/history.py`
-   - `app/pages/analysis.py`
+   - `app/ui/dashboard.py`
+   - `app/ui/upload.py`
+   - `app/ui/history.py`
+   - `app/ui/analysis.py`
 
 9. **Админ-панель**
    - `app/admin/users.py`

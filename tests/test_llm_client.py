@@ -21,7 +21,7 @@ def test_llm_client_test_connection_success(mock_client):
     mock_response.status_code = 200
 
     mock_context = MagicMock()
-    mock_context.get.return_value = mock_response
+    mock_context.post.return_value = mock_response
     mock_context.__enter__ = MagicMock(return_value=mock_context)
     mock_context.__exit__ = MagicMock(return_value=False)
     mock_client.return_value = mock_context

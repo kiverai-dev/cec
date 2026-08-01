@@ -1,9 +1,16 @@
 from typing import Optional
+import logging
 import fitz
+
+logger = logging.getLogger(__name__)
 
 
 def extract_text_from_pdf(file_path: str) -> str:
-    doc = fitz.open(file_path)
+    try:
+        doc = fitz.open(file_path)
+    except Exception as e:
+        logger.error(f"Не удалось открыть PDF {file_path}: {e}")
+        return ""
     text_parts = []
     for page in doc:
         text_parts.append(page.get_text())
@@ -12,7 +19,11 @@ def extract_text_from_pdf(file_path: str) -> str:
 
 
 def extract_text_from_pdf_bytes(pdf_bytes: bytes) -> str:
-    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    try:
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    except Exception as e:
+        logger.error(f"Не удалось открыть PDF из байтов: {e}")
+        return ""
     text_parts = []
     for page in doc:
         text_parts.append(page.get_text())

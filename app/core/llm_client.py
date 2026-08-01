@@ -107,8 +107,6 @@ class LLMClient:
 
         return LLMResponse(content=content, model=model, usage=usage, finish_reason=finish_reason, truncated=truncated)
 
-        return LLMResponse(content=content, model=model, usage=usage, finish_reason=finish_reason, truncated=truncated)
-
     def test_connection(self) -> tuple[bool, str]:
         try:
             base_url = self._get_base_url().rstrip("/")

@@ -79,24 +79,6 @@ DEFAULT_SYSTEM_EXTRACT = "Ты — медицинский аналитик, сп
 DEFAULT_SYSTEM_ANALYZE = "Ты — эксперт по оценке качества медицинской документации в лечебно-профилактических учреждениях."
 
 
-def estimate_tokens(text: str) -> int:
-    return len(text) // 4
-
-
-def calculate_dynamic_max_tokens(data_size_chars: int, min_tokens: int = 4096, max_tokens: int = 16384) -> int:
-    estimated_input_tokens = data_size_chars // 4
-    base_output = min_tokens
-    
-    if estimated_input_tokens > 10000:
-        base_output = 8192
-    if estimated_input_tokens > 20000:
-        base_output = 12288
-    if estimated_input_tokens > 30000:
-        base_output = 16384
-    
-    return min(base_output, max_tokens)
-
-
 def get_prompt_extract() -> str:
     try:
         db = SessionLocal()

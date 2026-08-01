@@ -1,11 +1,12 @@
 import os
 import json
+import uuid
 from typing import Optional
 import streamlit as st
 from app.database.session import SessionLocal
 from app.database import crud
 from app.auth.roles import require_role, get_current_user
-from app.utils.validators import validate_uploaded_file, get_file_extension
+from app.utils.validators import validate_uploaded_file, get_file_extension, validate_archive_contents
 from app.utils.archive import extract_archive, get_archive_filenames, is_archive
 from app.core.pdf_extractor import extract_text_from_pdf
 from app.core.analyzer import extract_json_from_text, analyze_extracted_data
@@ -28,14 +29,14 @@ def process_single_pdf(pdf_path: str) -> tuple[dict, Optional[str]]:
 
 
 def process_archive(archive_path: str, progress_callback=None) -> tuple[list, list]:
-    extract_dir = archive_path.replace(".zip", "_extracted").replace(".rar", "_extracted")
+    extract_dir = archive_path + "_extracted"
     os.makedirs(extract_dir, exist_ok=True)
-    
+
     success, extracted_files, error = extract_archive(archive_path, extract_dir)
     if not success:
         return [], [error]
-    
-    pdf_files = [f for f in extracted_files if f.endswith(".pdf")]
+
+    pdf_files = [f for f in extracted_files if f.lower().endswith(".pdf")]
     if not pdf_files:
         return [], ["В архиве не найдено PDF файлов"]
     
@@ -94,7 +95,8 @@ def show_upload_page():
             upload_dir = f"data/uploads/user_{user.id}"
             os.makedirs(upload_dir, exist_ok=True)
 
-            file_path = os.path.join(upload_dir, uploaded_file.name)
+            safe_name = os.path.basename(uploaded_file.name)
+            file_path = os.path.join(upload_dir, f"{uuid.uuid4().hex[:8]}_{safe_name}")
             with open(file_path, "wb") as f:
                 f.write(uploaded_file.getbuffer())
 
@@ -134,6 +136,11 @@ def show_upload_page():
                             st.rerun()
 
                     elif ext in [".zip", ".rar"]:
+                        archive_filenames = get_archive_filenames(file_path)
+                        is_valid_contents, contents_error = validate_archive_contents(archive_filenames)
+                        if not is_valid_contents:
+                            raise ValueError(contents_error)
+
                         progress_bar = st.progress(0)
                         status_text = st.empty()
 

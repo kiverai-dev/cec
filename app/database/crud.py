@@ -90,6 +90,15 @@ def update_upload_status(db: Session, upload_id: int, status: str, error_message
     return upload
 
 
+def delete_upload(db: Session, upload_id: int) -> bool:
+    upload = db.query(Upload).filter(Upload.id == upload_id).first()
+    if not upload:
+        return False
+    db.delete(upload)
+    db.commit()
+    return True
+
+
 def create_analysis(db: Session, upload_id: int, extracted_json: str, result_text: str) -> Analysis:
     analysis = Analysis(upload_id=upload_id, extracted_json=extracted_json, result_text=result_text)
     db.add(analysis)

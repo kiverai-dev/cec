@@ -4,10 +4,10 @@ from app.database.session import init_db, SessionLocal
 from app.database import crud
 from app.auth.pages import show_login_page, show_setup_page, show_logout_button
 from app.auth.roles import get_current_user, is_admin, is_analyst
-from app.pages.dashboard import show_dashboard
-from app.pages.upload import show_upload_page
-from app.pages.history import show_history_page
-from app.pages.analysis import show_analysis_page
+from app.ui.dashboard import show_dashboard
+from app.ui.upload import show_upload_page
+from app.ui.history import show_history_page
+from app.ui.analysis import show_analysis_page
 from app.admin.users import show_admin_users
 from app.admin.settings import show_admin_settings
 
@@ -28,7 +28,8 @@ def show_sidebar():
     with st.sidebar:
         st.markdown(f"### {APP_NAME}")
         st.markdown(f"**{user.username}**")
-        st.caption(f"Роль: {{'admin': 'Администратор', 'analyst': 'Аналитик', 'viewer': 'Просмотр'}}.get(user.role, user.role)")
+        role_names = {"admin": "Администратор", "analyst": "Аналитик", "viewer": "Просмотр"}
+        st.caption(f"Роль: {role_names.get(user.role, user.role)}")
         st.markdown("---")
 
         if st.button("Главная", use_container_width=True):

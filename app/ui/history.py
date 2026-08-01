@@ -1,13 +1,37 @@
+import os
+import shutil
 import streamlit as st
-from datetime import datetime
 from app.database.session import SessionLocal
 from app.database import crud
 from app.auth.roles import get_current_user
 
 
+def _delete_upload_files(file_path: str):
+    """Удаляет загруженный файл и распакованную директорию архива (если есть)."""
+    try:
+        if os.path.isfile(file_path):
+            os.remove(file_path)
+        extract_dir = file_path + "_extracted"
+        if os.path.isdir(extract_dir):
+            shutil.rmtree(extract_dir)
+    except OSError:
+        pass
+
+
+def _can_delete(user, upload) -> bool:
+    if user.role == "admin":
+        return True
+    return user.role == "analyst" and upload.user_id == user.id
+
+
 def show_history_page():
     st.title("История загрузок")
     user = get_current_user()
+
+    deleted_name = st.session_state.get("deleted_filename")
+    if deleted_name:
+        del st.session_state["deleted_filename"]
+        st.success(f"«{deleted_name}» удалён")
 
     db = SessionLocal()
     try:
@@ -48,7 +72,7 @@ def show_history_page():
             }
 
             with st.container():
-                col1, col2, col3 = st.columns([3, 2, 2])
+                col1, col2, col3, col4 = st.columns([3, 2, 2, 1.5])
 
                 with col1:
                     st.markdown(f"**{upload.filename}**")
@@ -68,6 +92,29 @@ def show_history_page():
                     elif upload.status == "error":
                         with st.expander("Ошибка"):
                             st.error(upload.error_message or "Неизвестная ошибка")
+
+                with col4:
+                    if _can_delete(user, upload):
+                        if st.button("Удалить", key=f"del_{upload.id}"):
+                            st.session_state["confirm_delete_id"] = upload.id
+                            st.rerun()
+
+                if _can_delete(user, upload) and st.session_state.get("confirm_delete_id") == upload.id:
+                    st.warning(f"Удалить «{upload.filename}»? Запись, результат анализа и файлы будут удалены безвозвратно.")
+                    confirm_col, cancel_col, _ = st.columns([1, 1, 4])
+                    with confirm_col:
+                        if st.button("Да, удалить", key=f"confirm_del_{upload.id}", type="primary"):
+                            filename = upload.filename
+                            file_path = upload.file_path
+                            _delete_upload_files(file_path)
+                            crud.delete_upload(db, upload.id)
+                            del st.session_state["confirm_delete_id"]
+                            st.session_state["deleted_filename"] = filename
+                            st.rerun()
+                    with cancel_col:
+                        if st.button("Отмена", key=f"cancel_del_{upload.id}"):
+                            del st.session_state["confirm_delete_id"]
+                            st.rerun()
 
                 st.markdown("---")
 

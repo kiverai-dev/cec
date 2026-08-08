@@ -6,8 +6,12 @@ DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///data/db/app.db")
 API_URL = os.getenv("API_URL", "http://localhost:8080")
 MAX_FILE_SIZE_MB = int(os.getenv("MAX_FILE_SIZE_MB", "50"))
 
-ALLOWED_EXTENSIONS = {".pdf", ".zip", ".rar"}
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif"}
+ARCHIVE_EXTENSIONS = {".zip", ".rar"}
+ALLOWED_EXTENSIONS = {".pdf"} | IMAGE_EXTENSIONS | ARCHIVE_EXTENSIONS
 MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
+
+OCR_LANG = os.getenv("OCR_LANG", "rus+eng")
 
 DEFAULT_SETTINGS = {
     "api_url": API_URL,

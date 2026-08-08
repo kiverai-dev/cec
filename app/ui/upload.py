@@ -6,21 +6,35 @@ import streamlit as st
 from app.database.session import SessionLocal
 from app.database import crud
 from app.auth.roles import require_role, get_current_user
-from app.utils.validators import validate_uploaded_file, get_file_extension, validate_archive_contents
+from app.utils.validators import validate_uploaded_file, get_file_extension, validate_archive_contents, is_image_file
 from app.utils.archive import extract_archive, get_archive_filenames, is_archive
 from app.core.pdf_extractor import extract_text_from_pdf
+from app.core.ocr import extract_text_from_image, ocr_pdf
 from app.core.analyzer import extract_json_from_text, analyze_extracted_data
 
 
-def process_single_pdf(pdf_path: str) -> tuple[dict, Optional[str]]:
-    pdf_text = extract_text_from_pdf(pdf_path)
-    if not pdf_text.strip():
-        return {}, "Не удалось извлечь текст из PDF"
-    
-    json_result, error = extract_json_from_text(pdf_text)
+def extract_document_text(file_path: str) -> str:
+    """Извлекает текст из PDF (с OCR-фолбэком при пустом текстовом слое) или изображения (OCR)."""
+    ext = get_file_extension(file_path)
+    if ext == ".pdf":
+        text = extract_text_from_pdf(file_path)
+        if not text.strip():
+            text = ocr_pdf(file_path)
+        return text
+    if is_image_file(file_path):
+        return extract_text_from_image(file_path)
+    return ""
+
+
+def process_single_file(file_path: str) -> tuple[dict, Optional[str]]:
+    doc_text = extract_document_text(file_path)
+    if not doc_text.strip():
+        return {}, "Не удалось извлечь текст из файла"
+
+    json_result, error = extract_json_from_text(doc_text)
     if error and not json_result:
         return {}, error
-    
+
     try:
         parsed = json.loads(json_result) if json_result else {}
         return parsed, None
@@ -36,24 +50,24 @@ def process_archive(archive_path: str, progress_callback=None) -> tuple[list, li
     if not success:
         return [], [error]
 
-    pdf_files = [f for f in extracted_files if f.lower().endswith(".pdf")]
-    if not pdf_files:
-        return [], ["В архиве не найдено PDF файлов"]
-    
+    doc_files = [f for f in extracted_files if f.lower().endswith(".pdf") or is_image_file(f)]
+    if not doc_files:
+        return [], ["В архиве не найдено PDF файлов или изображений"]
+
     all_results = []
     errors = []
-    
-    for i, pdf_file in enumerate(pdf_files):
+
+    for i, doc_file in enumerate(doc_files):
         if progress_callback:
-            progress_callback(i + 1, len(pdf_files), os.path.basename(pdf_file))
-        
-        result, error = process_single_pdf(pdf_file)
+            progress_callback(i + 1, len(doc_files), os.path.basename(doc_file))
+
+        result, error = process_single_file(doc_file)
         if error:
-            errors.append(f"{os.path.basename(pdf_file)}: {error}")
+            errors.append(f"{os.path.basename(doc_file)}: {error}")
         if result:
-            result["_source_file"] = os.path.basename(pdf_file)
+            result["_source_file"] = os.path.basename(doc_file)
             all_results.append(result)
-    
+
     return all_results, errors
 
 
@@ -71,13 +85,14 @@ def show_upload_page():
         st.markdown("---")
 
     st.markdown("""
-    Загрузите PDF файл или архив (ZIP/RAR) с медицинскими документами для анализа.
+    Загрузите PDF файл, изображение (скриншот) или архив (ZIP/RAR) с медицинскими документами для анализа.
+    Текст на изображениях распознаётся автоматически (OCR).
     """)
 
     uploaded_file = st.file_uploader(
         "Выберите файл",
-        type=["pdf", "zip", "rar"],
-        help="Поддерживаемые форматы: PDF, ZIP, RAR. Максимальный размер: 50 MB"
+        type=["pdf", "zip", "rar", "jpg", "jpeg", "png", "bmp", "tiff", "tif"],
+        help="Поддерживаемые форматы: PDF, изображения (JPG, PNG, BMP, TIFF), архивы (ZIP, RAR). Максимальный размер: 50 MB"
     )
 
     if uploaded_file is not None:
@@ -89,7 +104,7 @@ def show_upload_page():
         st.success(f"Файл: {uploaded_file.name}")
 
         if is_archive(uploaded_file.name):
-            st.info("Обнаружен архив. Каждый PDF будет обработан отдельно.")
+            st.info("Обнаружен архив. Каждый PDF и изображение будет обработано отдельно.")
 
         if st.button("Загрузить и проанализировать", type="primary"):
             upload_dir = f"data/uploads/user_{user.id}"
@@ -108,16 +123,21 @@ def show_upload_page():
                 try:
                     ext = get_file_extension(uploaded_file.name)
 
-                    if ext == ".pdf":
-                        with st.spinner("Извлечение данных из PDF..."):
-                            pdf_text = extract_text_from_pdf(file_path)
-                            if not pdf_text.strip():
-                                raise ValueError("Не удалось извлечь текст из PDF")
+                    if ext == ".pdf" or is_image_file(uploaded_file.name):
+                        if ext == ".pdf":
+                            spinner_text = "Извлечение текста из PDF..."
+                        else:
+                            spinner_text = "Распознавание текста (OCR)..."
 
-                            json_result, json_error = extract_json_from_text(pdf_text)
+                        with st.spinner(spinner_text):
+                            doc_text = extract_document_text(file_path)
+                            if not doc_text.strip():
+                                raise ValueError("Не удалось извлечь текст из файла")
+
+                            json_result, json_error = extract_json_from_text(doc_text)
                             analysis_result = None
                             analysis_error = None
-                            
+
                             if json_result:
                                 analysis_result, analysis_error = analyze_extracted_data(json_result)
                                 if json_error:
@@ -125,7 +145,7 @@ def show_upload_page():
 
                         if not json_result:
                             crud.update_upload_status(db, upload_record.id, "error", json_error or "Не удалось извлечь данные")
-                            st.error(f"Не удалось извлечь данные из PDF: {json_error}")
+                            st.error(f"Не удалось извлечь данные из файла: {json_error}")
                         else:
                             crud.create_analysis(db, upload_record.id, json_result, analysis_result or "")
                             crud.update_upload_status(db, upload_record.id, "done")
@@ -152,7 +172,7 @@ def show_upload_page():
                             results, errors = process_archive(file_path, update_progress)
 
                         progress_bar.progress(1.0)
-                        
+
                         if errors:
                             for err in errors:
                                 st.warning(err)
@@ -162,11 +182,11 @@ def show_upload_page():
                             st.error("Не удалось извлечь данные из архива")
                         else:
                             combined_json = json.dumps(results, ensure_ascii=False, indent=2)
-                            
+
                             status_text.text("Генерация аналитики...")
                             analysis_result = None
                             analysis_error = None
-                            
+
                             try:
                                 analysis_result, analysis_error = analyze_extracted_data(combined_json)
                             except Exception as e:

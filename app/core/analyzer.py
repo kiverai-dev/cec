@@ -15,33 +15,33 @@ DEFAULT_PROMPT_EXTRACT = """Ты — медицинский аналитик. И
 {pdf_text}
 
 Верни результат строго в формате JSON:
-{{
-  "patient_info": {{
+{
+  "patient_info": {
     "name": "ФИО пациента",
     "birth_date": "дата рождения",
     "gender": "пол"
-  }},
+  },
   "diagnoses": [
-    {{
+    {
       "code": "код МКБ",
       "name": "название диагноза",
       "date": "дата постановки"
-    }}
+    }
   ],
   "treatments": [
-    {{
+    {
       "type": "тип лечения",
       "description": "описание",
       "date": "дата"
-    }}
+    }
   ],
-  "metadata": {{
+  "metadata": {
     "document_type": "тип документа",
     "institution": "название учреждения",
     "doctor": "ФИО врача",
     "date": "дата документа"
-  }}
-}}
+  }
+}
 
 Если какие-то данные отсутствуют в тексте, оставь поле null. Ответ должен содержать только валидный JSON без дополнительного текста."""
 
@@ -79,12 +79,20 @@ DEFAULT_SYSTEM_EXTRACT = "Ты — медицинский аналитик, сп
 DEFAULT_SYSTEM_ANALYZE = "Ты — эксперт по оценке качества медицинской документации в лечебно-профилактических учреждениях."
 
 
+def normalize_legacy_braces(prompt: str) -> str:
+    """Ранние версии хранили промпты с экранированными скобками {{ }} под str.format().
+    Подстановка теперь работает через replace(), поэтому скобки приводим к одинарным."""
+    return prompt.replace("{{", "{").replace("}}", "}")
+
+
 def get_prompt_extract() -> str:
     try:
         db = SessionLocal()
         prompt = crud.get_setting(db, "prompt_extract")
         db.close()
-        return prompt or DEFAULT_PROMPT_EXTRACT
+        if prompt:
+            return normalize_legacy_braces(prompt)
+        return DEFAULT_PROMPT_EXTRACT
     except Exception:
         return DEFAULT_PROMPT_EXTRACT
 
@@ -94,7 +102,9 @@ def get_prompt_analyze() -> str:
         db = SessionLocal()
         prompt = crud.get_setting(db, "prompt_analyze")
         db.close()
-        return prompt or DEFAULT_PROMPT_ANALYZE
+        if prompt:
+            return normalize_legacy_braces(prompt)
+        return DEFAULT_PROMPT_ANALYZE
     except Exception:
         return DEFAULT_PROMPT_ANALYZE
 
@@ -127,7 +137,7 @@ def extract_json_from_text(pdf_text: str, max_tokens: int = -1) -> tuple[Optiona
 
     try:
         prompt_template = get_prompt_extract()
-        prompt = prompt_template.format(pdf_text=pdf_text)
+        prompt = prompt_template.replace("{pdf_text}", pdf_text)
         
         logger.info(f"Extracting JSON, input size: {len(pdf_text)} chars, max_tokens: {max_tokens or 'unlimited'}")
         
@@ -180,7 +190,7 @@ def analyze_extracted_data(json_data: str, max_tokens: int = -1) -> tuple[Option
 
     try:
         prompt_template = get_prompt_analyze()
-        prompt = prompt_template.format(json_data=json_data)
+        prompt = prompt_template.replace("{json_data}", json_data)
         
         logger.info(f"Analyzing data, input size: {len(json_data)} chars, max_tokens: {max_tokens or 'unlimited'}")
         

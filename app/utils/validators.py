@@ -1,6 +1,6 @@
 import os
 from typing import Tuple, List
-from app.config import ALLOWED_EXTENSIONS, MAX_FILE_SIZE_BYTES
+from app.config import ALLOWED_EXTENSIONS, IMAGE_EXTENSIONS, MAX_FILE_SIZE_BYTES
 
 
 def validate_file_extension(filename: str) -> Tuple[bool, str]:
@@ -33,11 +33,17 @@ def validate_uploaded_file(uploaded_file) -> Tuple[bool, str]:
 
 
 def validate_archive_contents(filenames: List[str]) -> Tuple[bool, str]:
+    allowed = {".pdf"} | IMAGE_EXTENSIONS
     for filename in filenames:
         ext = os.path.splitext(filename)[1].lower()
-        if ext != ".pdf":
-            return False, f"В архиве найден недопустимый файл: {filename}. Разрешены только PDF файлы."
+        if ext not in allowed:
+            return False, f"В архиве найден недопустимый файл: {filename}. Разрешены PDF файлы и изображения."
     return True, ""
+
+
+def is_image_file(filename: str) -> bool:
+    ext = os.path.splitext(filename)[1].lower()
+    return ext in IMAGE_EXTENSIONS
 
 
 def get_file_extension(filename: str) -> str:

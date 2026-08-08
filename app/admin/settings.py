@@ -5,7 +5,8 @@ from app.auth.roles import require_role
 from app.core.llm_client import get_llm_client
 from app.core.analyzer import (
     DEFAULT_PROMPT_EXTRACT, DEFAULT_PROMPT_ANALYZE,
-    DEFAULT_SYSTEM_EXTRACT, DEFAULT_SYSTEM_ANALYZE
+    DEFAULT_SYSTEM_EXTRACT, DEFAULT_SYSTEM_ANALYZE,
+    normalize_legacy_braces
 )
 from app.config import DEFAULT_SETTINGS
 
@@ -133,6 +134,8 @@ def show_prompt_settings():
     **Переменные для подстановки:**
     - `{pdf_text}` — текст из PDF документа
     - `{json_data}` — извлечённые данные в формате JSON
+    
+    Фигурные скобки в примерах JSON пишите как обычно — подставляются только переменные выше.
     """)
 
     db = SessionLocal()
@@ -156,7 +159,7 @@ def show_prompt_settings():
 
         with st.expander("Пользовательский промпт для извлечения", expanded=True):
             if prompt_extract:
-                display_prompt_extract = prompt_extract
+                display_prompt_extract = normalize_legacy_braces(prompt_extract)
             else:
                 display_prompt_extract = DEFAULT_PROMPT_EXTRACT
             
@@ -180,7 +183,7 @@ def show_prompt_settings():
 
         with st.expander("Пользовательский промпт для анализа", expanded=True):
             if prompt_analyze:
-                display_prompt_analyze = prompt_analyze
+                display_prompt_analyze = normalize_legacy_braces(prompt_analyze)
             else:
                 display_prompt_analyze = DEFAULT_PROMPT_ANALYZE
             

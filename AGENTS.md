@@ -9,8 +9,8 @@
 ## Архитектура
 
 ### Воркфлоу
-1. Пользователь загружает PDF файл или архив (ZIP/RAR)
-2. Извлечение текста из PDF (PyMuPDF)
+1. Пользователь загружает PDF, изображение (скриншот) или архив (ZIP/RAR)
+2. Извлечение текста из PDF (PyMuPDF) или OCR изображения (Tesseract); для PDF без текстового слоя — OCR-фолбэк
 3. LLM преобразует данные в JSON
 4. LLM анализирует JSON
 5. Пользователь получает аналитику
@@ -20,6 +20,7 @@
 - **Backend:** Python 3.11
 - **Database:** SQLite + SQLAlchemy
 - **LLM:** OpenAI-совместимый API (OpenAI, llama.cpp, Ollama, vLLM и др.)
+- **OCR:** Tesseract (pytesseract, языки rus+eng)
 - **Deployment:** Docker Compose
 
 ### Роли пользователей
@@ -59,6 +60,7 @@
 │   ├── core/
 │   │   ├── __init__.py
 │   │   ├── pdf_extractor.py       # PyMuPDF извлечение текста
+│   │   ├── ocr.py                 # Tesseract OCR (изображения, скан-PDF)
 │   │   ├── llm_client.py          # HTTP клиент llama.cpp
 │   │   ├── analyzer.py            # Промпты + анализ
 │   │   └── schemas.py             # Pydantic схемы
@@ -85,7 +87,9 @@
 ├── tests/
 │   ├── __init__.py
 │   ├── test_pdf_extractor.py
-│   └── test_llm_client.py
+│   ├── test_llm_client.py
+│   ├── test_ocr.py
+│   └── test_crud.py
 │
 └── data/                          # Docker volume (gitignored)
     ├── uploads/
@@ -217,14 +221,20 @@ def extract_text_from_pdf(file_path: str) -> str:
     return text
 ```
 
+### OCR (Tesseract)
+- **Изображения:** `extract_text_from_image()` (pytesseract, `--dpi 300`)
+- **Скан-PDF:** `ocr_pdf()` — рендер страниц PyMuPDF в растр 300 DPI → OCR (фолбэк при пустом текстовом слое)
+- Язык: `OCR_LANG` env, по умолчанию `rus+eng`
+- В Docker: пакеты `tesseract-ocr`, `tesseract-ocr-rus`
+
 ### Распаковка архивов
 - **ZIP:** стандартный `zipfile`
 - **RAR:** библиотека `rarfile` (требует установленный `unrar` в Docker)
 
 ### Валидация файлов
-- Разрешённые расширения: `.pdf`, `.zip`, `.rar`
+- Разрешённые расширения: `.pdf`, `.jpg`, `.jpeg`, `.png`, `.bmp`, `.tiff`, `.tif`, `.zip`, `.rar`
 - Максимальный размер: 50 MB (настраивается через env)
-- Для архивов: проверка что внутри только PDF файлы
+- Для архивов: проверка что внутри только PDF файлы и изображения (смешанные архивы разрешены)
 
 ---
 
@@ -432,8 +442,8 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Установка unrar для работы с RAR архивами
-RUN apt-get update && apt-get install -y unrar-free && rm -rf /var/lib/apt/lists/*
+# unrar для RAR архивов, tesseract для OCR, fonts-dejavu для PDF-отчётов
+RUN apt-get update && apt-get install -y unrar-free fonts-dejavu-core tesseract-ocr tesseract-ocr-rus && rm -rf /var/lib/apt/lists/*
 
 # Копирование зависимостей
 COPY requirements.txt .
@@ -479,6 +489,9 @@ pydantic>=2.6.0
 bcrypt>=4.1.0
 python-multipart>=0.0.9
 rarfile>=4.1
+fpdf2>=2.7.0
+pytesseract>=0.3.10
+Pillow>=10.0.0
 ```
 
 ---
@@ -496,6 +509,9 @@ API_URL=http://localhost:8080
 APP_NAME=ТестАналитики
 SECRET_KEY=your-secret-key-change-in-production
 MAX_FILE_SIZE_MB=50
+
+# OCR (Tesseract)
+OCR_LANG=rus+eng
 ```
 
 ---
@@ -569,10 +585,11 @@ Thumbs.db
    - `app/auth/roles.py`
    - `app/auth/pages.py`
 
-5. **PDF обработка**
+5. **PDF обработка и OCR**
    - `app/utils/validators.py`
    - `app/utils/archive.py`
    - `app/core/pdf_extractor.py`
+   - `app/core/ocr.py`
 
 6. **LLM интеграция**
    - `app/core/schemas.py`
@@ -603,6 +620,8 @@ Thumbs.db
 13. **Тесты**
     - `tests/test_pdf_extractor.py`
     - `tests/test_llm_client.py`
+    - `tests/test_ocr.py`
+    - `tests/test_crud.py`
 
 ---
 
